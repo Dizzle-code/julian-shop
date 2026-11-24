@@ -50,8 +50,6 @@
   textarea { min-height:80px; resize:vertical; }
   input[type=date] { color-scheme:dark; }
   .row { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-  .or { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:.75rem; text-transform:uppercase; letter-spacing:.1em; margin-top:14px; }
-  .or::before, .or::after { content:""; flex:1; height:1px; background:var(--border); }
 
   button { position:relative; background:var(--grad); background-size:200% 200%; color:#fff; border:0; border-radius:12px; padding:11px 18px; font:inherit; font-weight:600; cursor:pointer; transition:transform .15s, box-shadow .2s, background-position .4s; box-shadow:0 4px 24px rgba(217,70,239,.35); }
   button:hover:not(:disabled) { transform:translateY(-2px); box-shadow:0 8px 32px rgba(217,70,239,.55); background-position:100% 0; }
@@ -60,10 +58,6 @@
   button.ghost:hover { background:rgba(255,255,255,.12); box-shadow:none; }
   button.danger { background:linear-gradient(135deg,#ef4444,#f43f5e); box-shadow:0 4px 20px rgba(239,68,68,.3); }
   button.big { width:100%; padding:14px; font-size:1rem; margin-top:18px; }
-
-  .chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
-  .chip { padding:6px 12px; font-size:.82rem; border-radius:99px; background:var(--glass-hi); border:1px solid var(--border); box-shadow:none; font-weight:500; }
-  .chip:hover { border-color:var(--fuchsia); box-shadow:0 0 16px rgba(217,70,239,.3); }
 
   .filters { display:inline-flex; gap:4px; padding:4px; border-radius:14px; background:rgba(0,0,0,.35); border:1px solid var(--border); margin-bottom:16px; }
   .filters button { background:transparent; box-shadow:none; padding:7px 16px; color:var(--muted); }
@@ -78,7 +72,6 @@
   .meta { color:var(--muted); font-size:.83rem; margin-top:6px; display:flex; flex-wrap:wrap; gap:6px 12px; }
   .tags { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
   .tag { font-size:.82rem; padding:5px 11px; border-radius:10px; background:var(--glass-hi); border:1px solid var(--border); font-weight:600; }
-  .tag.money { color:#86efac; border-color:rgba(134,239,172,.25); }
   .tag.reward { color:#f0abfc; border-color:rgba(240,171,252,.3); background:rgba(217,70,239,.1); }
   .desc { white-space:pre-wrap; margin:12px 0 0; color:#d4d4e0; line-height:1.5; }
   .note { background:rgba(250,204,21,.08); border:1px solid rgba(250,204,21,.25); color:#fde68a; border-radius:12px; padding:10px 12px; margin-top:12px; font-size:.9rem; }
@@ -99,7 +92,6 @@
   .balance { background:rgba(0,0,0,.3); border:1px solid var(--border); border-radius:16px; padding:14px; }
   .balance .who { font-weight:600; display:flex; align-items:center; gap:8px; }
   .avatar { width:28px; height:28px; border-radius:50%; background:var(--grad); display:grid; place-items:center; font-size:.8rem; font-weight:800; }
-  .balance .amt { font-size:1.4rem; font-weight:800; margin-top:8px; }
   .balance .rew { color:#f0abfc; font-size:.85rem; margin-top:4px; }
   .empty { color:var(--muted); text-align:center; padding:28px; }
   .error { color:#f87171; margin-top:10px; font-size:.9rem; }
@@ -124,7 +116,7 @@
 
 <main>
   <section class="hero">
-    <span class="pill"><span class="dot"></span> Jetzt neu: Bezahlen mit GTA 6 🎮</span>
+    <span class="pill"><span class="dot"></span> Familien-Service 2.0 ist live</span>
     <h1>Deine Wünsche.<br><span class="gradient-text">Meine Skills.</span> 🚀</h1>
     <p>Der next-level Familien-Service. Auftrag erstellen, zurücklehnen, Julian erledigt das. ✨</p>
   </section>
@@ -132,12 +124,12 @@
   <section class="stats">
     <div class="card stat"><div class="num gradient-text" id="statOpen">0</div><div class="lbl">🔥 Offene Aufträge</div></div>
     <div class="card stat"><div class="num gradient-text" id="statDone">0</div><div class="lbl">✅ Erledigt</div></div>
-    <div class="card stat"><div class="num gradient-text" id="statEarned">0 €</div><div class="lbl">💰 Verdient</div></div>
+    <div class="card stat"><div class="num gradient-text" id="statPaid">0</div><div class="lbl">💚 Bezahlt</div></div>
   </section>
 
   <section class="card glow">
     <h2>✨ Neuer Auftrag</h2>
-    <p class="sub">Beschreib kurz, was du brauchst. Bezahlen kannst du mit Geld, mit einer Sache oder mit beidem.</p>
+    <p class="sub">Beschreib kurz, was du brauchst, und wähl aus, womit du bezahlst.</p>
     <form id="orderForm">
       <div class="row">
         <div><label for="requester">👤 Dein Name</label><input id="requester" required maxlength="50" placeholder="z.B. Mama"></div>
@@ -146,36 +138,27 @@
       <label for="description">📝 Details (optional)</label>
       <textarea id="description" maxlength="2000" placeholder="Alles, was ich wissen sollte..."></textarea>
       <div class="row">
-        <div><label for="offer">💸 Geld (€)</label><input id="offer" type="number" min="0" step="0.5" value="5"></div>
+        <div><label for="method">💳 Womit bezahlst du?</label><select id="method" required></select></div>
         <div><label for="dueDate">📅 Bis wann? (optional)</label><input id="dueDate" type="date"></div>
       </div>
-      <div class="or">und / oder</div>
-      <label for="reward">🎁 Sache als Bezahlung</label>
-      <input id="reward" maxlength="120" placeholder="z.B. GTA 6 🎮">
-      <div class="chips" id="rewardChips">
-        <button type="button" class="chip">🎮 GTA 6</button>
-        <button type="button" class="chip">🍕 Pizza</button>
-        <button type="button" class="chip">🍫 Schokolade</button>
-        <button type="button" class="chip">🧹 Ich räum dein Zimmer auf</button>
-        <button type="button" class="chip">🎬 Kinoabend</button>
-      </div>
+      <div class="pay-info hidden" id="methodInfo" style="margin-top:10px"></div>
       <button type="submit" class="big">🚀 Auftrag abschicken</button>
       <div id="formError" class="error"></div>
     </form>
   </section>
 
   <section class="card hidden" id="methodsCard">
-    <h2>⚙️ Zahlungsarten verwalten</h2>
-    <p class="sub">Nur für dich sichtbar. Die Familie sieht Name und Anleitung beim Bezahlen.</p>
+    <h2>⚙️ Bezahlarten verwalten</h2>
+    <p class="sub">Nur für dich sichtbar. Die Familie kann nur mit diesen Bezahlarten bezahlen.</p>
     <div id="methodsEditor"></div>
     <div style="display:flex; gap:8px">
-      <button class="ghost" id="addMethod">➕ Zahlungsart</button>
+      <button class="ghost" id="addMethod">➕ Bezahlart</button>
       <button id="saveMethods">💾 Speichern</button>
     </div>
   </section>
 
   <section class="card">
-    <h2>💳 Offene Beträge</h2>
+    <h2>💳 Offene Bezahlungen</h2>
     <p class="sub">Erledigt, aber noch nicht bezahlt.</p>
     <div id="balances" class="balances"></div>
   </section>
@@ -199,9 +182,8 @@ const STATUS_LABELS = { neu: "🆕 neu", angenommen: "⏳ angenommen", erledigt:
 const STATUSES = Object.keys(STATUS_LABELS);
 const state = { orders: [], methods: [], filter: "offen", pin: sessionStorage.getItem("adminPin") || "" };
 const $ = (id) => document.getElementById(id);
-const euro = (n) => (n ?? 0).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
-const amountOf = (o) => o.price ?? o.offer;
+const methodById = (id) => state.methods.find((m) => m.id === id);
 
 $("requester").value = localStorage.getItem("name") || "";
 
@@ -231,10 +213,27 @@ async function load() {
 function renderMethodsEditor() {
   $("methodsEditor").innerHTML = state.methods.map((m) => `
     <div class="method" data-id="${esc(m.id)}">
-      <input data-field="name" placeholder="Name, z.B. Überweisung" value="${esc(m.name)}">
-      <textarea data-field="instructions" placeholder="Anleitung, z.B. IBAN oder 'in die Spardose legen'">${esc(m.instructions)}</textarea>
+      <input data-field="name" placeholder="Name" value="${esc(m.name)}">
+      <textarea data-field="instructions" placeholder="Beschreibung / Anleitung (optional)">${esc(m.instructions)}</textarea>
       <button class="danger" data-action="remove">🗑️</button>
-    </div>`).join("") || `<div class="empty">Noch keine Zahlungsarten.</div>`;
+    </div>`).join("") || `<div class="empty">Noch keine Bezahlarten.</div>`;
+}
+
+function renderMethodSelect() {
+  const select = $("method");
+  const current = select.value;
+  select.innerHTML = state.methods.length
+    ? `<option value="">Bezahlart auswählen...</option>` + state.methods.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("")
+    : `<option value="">Julian hat noch keine Bezahlarten angelegt</option>`;
+  select.disabled = !state.methods.length;
+  if (methodById(current)) select.value = current;
+  updateMethodInfo();
+}
+
+function updateMethodInfo() {
+  const method = methodById($("method").value);
+  $("methodInfo").textContent = method?.instructions || "";
+  $("methodInfo").classList.toggle("hidden", !method?.instructions);
 }
 
 function readMethodsEditor() {
@@ -250,27 +249,25 @@ function render() {
   const wasHidden = $("methodsCard").classList.contains("hidden");
   $("methodsCard").classList.toggle("hidden", !state.pin);
   if (state.pin && wasHidden) renderMethodsEditor();
+  renderMethodSelect();
   const me = localStorage.getItem("name") || "";
 
   const isOpen = (o) => !["bezahlt", "abgelehnt"].includes(o.status);
   $("statOpen").textContent = state.orders.filter(isOpen).length;
   $("statDone").textContent = state.orders.filter((o) => ["erledigt", "gemeldet", "bezahlt"].includes(o.status)).length;
-  $("statEarned").textContent = euro(state.orders.filter((o) => o.status === "bezahlt").reduce((sum, o) => sum + amountOf(o), 0));
+  $("statPaid").textContent = state.orders.filter((o) => o.status === "bezahlt").length;
 
   const balances = {};
   for (const o of state.orders) {
     if (o.status !== "erledigt" && o.status !== "gemeldet") continue;
-    const entry = (balances[o.requester] ??= { money: 0, rewards: [] });
-    entry.money += amountOf(o);
-    if (o.reward) entry.rewards.push(o.reward);
+    (balances[o.requester] ??= []).push(o);
   }
   const entries = Object.entries(balances);
   $("balances").innerHTML = entries.length
-    ? entries.map(([name, b]) => `
+    ? entries.map(([name, list]) => `
       <div class="balance">
         <div class="who"><span class="avatar">${esc(name[0].toUpperCase())}</span>${esc(name)}</div>
-        <div class="amt gradient-text">${euro(b.money)}</div>
-        ${b.rewards.map((r) => `<div class="rew">🎁 ${esc(r)}</div>`).join("")}
+        ${list.map((o) => `<div class="rew">💳 ${esc(o.paymentMethod || "?")} <span style="color:var(--muted)">für ${esc(o.title)}</span></div>`).join("")}
       </div>`).join("")
     : `<div class="empty">🎉 Alles bezahlt. Respekt.</div>`;
 
@@ -286,29 +283,18 @@ function render() {
 function renderOrder(o) {
   const date = new Date(o.createdAt).toLocaleDateString("de-DE");
   const due = o.dueDate ? `<span>📅 bis ${new Date(o.dueDate).toLocaleDateString("de-DE")}</span>` : "";
-  const amount = amountOf(o);
-  const moneyTag = amount > 0 || !o.reward
-    ? `<span class="tag money">💸 ${euro(amount)}${o.price != null && o.price !== o.offer ? ` <s style="opacity:.5">${euro(o.offer)}</s>` : ""}</span>`
-    : "";
-  const rewardTag = o.reward ? `<span class="tag reward">🎁 ${esc(o.reward)}</span>` : "";
-  const paid = o.paymentMethod ? `<span>💳 per ${esc(o.paymentMethod)}</span>` : "";
-  const needsMethod = amount > 0;
-  const payBox = o.status === "erledigt" && (!needsMethod || state.methods.length) ? `
+  const method = methodById(o.paymentMethodId);
+  const methodTag = o.paymentMethod ? `<span class="tag reward">💳 ${esc(o.paymentMethod)}</span>` : "";
+  const payBox = o.status === "erledigt" ? `
     <div class="pay" data-id="${o.id}">
-      ${needsMethod ? `
-      <select data-field="method">
-        <option value="">💳 Wie willst du ${euro(amount)} bezahlen?</option>
-        ${state.methods.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("")}
-      </select>
-      <div class="pay-info hidden"></div>` : ""}
-      ${o.reward ? `<div class="pay-info">🎁 Denk an: <b>${esc(o.reward)}</b></div>` : ""}
-      <div><button data-action="pay" ${needsMethod ? "disabled" : ""}>📨 ${needsMethod ? "Zahlung" : "Übergabe"} melden</button></div>
+      ${method?.instructions ? `<div class="pay-info">${esc(method.instructions)}</div>` : ""}
+      <div><button data-action="pay">📨 Bezahlung melden</button></div>
     </div>` : "";
+  const methodOptions = state.methods.map((m) => `<option value="${esc(m.id)}" ${m.id === o.paymentMethodId ? "selected" : ""}>${esc(m.name)}</option>`).join("");
   const admin = state.pin ? `
     <div class="admin" data-id="${o.id}">
       <div><label>Status</label><select data-field="status">${STATUSES.map((s) => `<option value="${s}" ${s === o.status ? "selected" : ""}>${STATUS_LABELS[s]}</option>`).join("")}</select></div>
-      <div><label>Preis (€)</label><input data-field="price" type="number" min="0" step="0.5" value="${o.price ?? ""}" placeholder="${o.offer}"></div>
-      <div><label>Sache</label><input data-field="reward" maxlength="120" value="${esc(o.reward)}" placeholder="z.B. GTA 6"></div>
+      <div style="grid-column:span 2"><label>Bezahlart</label><select data-field="method">${method ? "" : `<option value="${esc(o.paymentMethodId ?? "")}" selected>${esc(o.paymentMethod || "keine")} (gelöscht)</option>`}${methodOptions}</select></div>
       <div class="full"><input data-field="note" placeholder="💬 Notiz an ${esc(o.requester)}" value="${esc(o.note)}"></div>
       <div class="full"><button data-action="save">💾 Speichern</button><button class="danger" data-action="delete">🗑️ Löschen</button></div>
     </div>` : "";
@@ -317,11 +303,11 @@ function renderOrder(o) {
       <div class="order-head">
         <div>
           <h3>${esc(o.title)}</h3>
-          <div class="meta"><span>👤 ${esc(o.requester)}</span><span>🕒 ${date}</span>${due}${paid}</div>
+          <div class="meta"><span>👤 ${esc(o.requester)}</span><span>🕒 ${date}</span>${due}</div>
         </div>
         <span class="badge s-${o.status}">${STATUS_LABELS[o.status]}</span>
       </div>
-      <div class="tags">${moneyTag}${rewardTag}</div>
+      <div class="tags">${methodTag}</div>
       ${o.description ? `<p class="desc">${esc(o.description)}</p>` : ""}
       ${o.note ? `<div class="note">💬 Julian: ${esc(o.note)}</div>` : ""}
       ${payBox}
@@ -329,10 +315,7 @@ function renderOrder(o) {
     </div>`;
 }
 
-$("rewardChips").addEventListener("click", (e) => {
-  const chip = e.target.closest(".chip");
-  if (chip) $("reward").value = chip.textContent;
-});
+$("method").addEventListener("change", updateMethodInfo);
 
 $("orderForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -344,11 +327,10 @@ $("orderForm").addEventListener("submit", async (e) => {
       requester,
       title: $("title").value,
       description: $("description").value,
-      offer: $("offer").value,
-      reward: $("reward").value,
+      methodId: $("method").value,
       dueDate: $("dueDate").value,
     });
-    for (const id of ["title", "description", "dueDate", "reward"]) $(id).value = "";
+    for (const id of ["title", "description", "dueDate"]) $(id).value = "";
     toast("🚀 Auftrag ist raus!");
     await load();
   } catch (err) {
@@ -371,7 +353,7 @@ $("orders").addEventListener("click", async (e) => {
   const id = box.dataset.id;
   try {
     if (btn.dataset.action === "pay") {
-      await api("POST", `/api/orders/${id}/pay`, { methodId: box.querySelector('[data-field="method"]')?.value });
+      await api("POST", `/api/orders/${id}/pay`);
       toast("📨 Gemeldet! Julian checkt das.");
     } else if (btn.dataset.action === "delete") {
       if (!confirm("Auftrag wirklich löschen?")) return;
@@ -381,8 +363,7 @@ $("orders").addEventListener("click", async (e) => {
       const field = (name) => box.querySelector(`[data-field="${name}"]`).value;
       await api("PATCH", `/api/orders/${id}`, {
         status: field("status"),
-        price: field("price") === "" ? null : field("price"),
-        reward: field("reward"),
+        methodId: field("method"),
         note: field("note"),
       });
       toast("💾 Gespeichert");
@@ -391,16 +372,6 @@ $("orders").addEventListener("click", async (e) => {
   } catch (err) {
     toast("⚠️ " + err.message);
   }
-});
-
-$("orders").addEventListener("change", (e) => {
-  if (e.target.dataset.field !== "method") return;
-  const box = e.target.closest(".pay");
-  const method = state.methods.find((m) => m.id === e.target.value);
-  const info = box.querySelector(".pay-info");
-  info.textContent = method?.instructions || "";
-  info.classList.toggle("hidden", !method?.instructions);
-  box.querySelector('[data-action="pay"]').disabled = !method;
 });
 
 $("addMethod").addEventListener("click", () => {
@@ -418,7 +389,7 @@ $("saveMethods").addEventListener("click", async () => {
     state.methods = await api("PUT", "/api/payment-methods", readMethodsEditor());
     renderMethodsEditor();
     render();
-    toast("💾 Zahlungsarten gespeichert");
+    toast("💾 Bezahlarten gespeichert");
   } catch (err) {
     toast("⚠️ " + err.message);
   }

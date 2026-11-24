@@ -29,9 +29,7 @@ function saveJson(file, value) {
 }
 
 let orders = loadJson(ORDERS_FILE, []);
-let paymentMethods = loadJson(METHODS_FILE, [
-  { id: crypto.randomUUID(), name: "Bar", instructions: "Gib mir das Geld einfach persönlich." },
-]);
+let paymentMethods = loadJson(METHODS_FILE, []);
 
 const saveOrders = () => saveJson(ORDERS_FILE, orders);
 
@@ -68,9 +66,12 @@ function cleanText(value, max) {
   return String(value ?? "").trim().slice(0, max);
 }
 
-function cleanAmount(value) {
-  const amount = Math.round(Number(value) * 100) / 100;
-  return Number.isFinite(amount) && amount >= 0 ? amount : null;
+function applyMethod(order, methodId) {
+  const method = paymentMethods.find((m) => m.id === methodId);
+  if (!method) return false;
+  order.paymentMethodId = method.id;
+  order.paymentMethod = method.name;
+  return true;
 }
 
 async function handleApi(req, res, url) {
@@ -102,16 +103,7 @@ async function handleApi(req, res, url) {
     const order = orders.find((o) => o.id === payMatch[1]);
     if (!order) return send(res, 404, { error: "Auftrag nicht gefunden" });
     if (order.status !== "erledigt") return send(res, 400, { error: "Nur erledigte Aufträge können bezahlt werden" });
-    const body = await readBody(req);
-    const amount = order.price ?? order.offer;
-    let methodName = "Übergabe";
-    if (amount > 0) {
-      const method = paymentMethods.find((m) => m.id === body.methodId);
-      if (!method) return send(res, 400, { error: "Zahlungsart unbekannt" });
-      methodName = method.name;
-    }
     order.status = "gemeldet";
-    order.paymentMethod = methodName;
     order.updatedAt = new Date().toISOString();
     saveOrders();
     return send(res, 200, order);
@@ -131,24 +123,20 @@ async function handleApi(req, res, url) {
     const requester = cleanText(body.requester, 50);
     const title = cleanText(body.title, 120);
     if (!requester || !title) return send(res, 400, { error: "Name und Titel sind Pflicht" });
-    const offer = cleanAmount(body.offer) ?? 0;
-    const reward = cleanText(body.reward, 120);
-    if (offer === 0 && !reward) return send(res, 400, { error: "Gib einen Betrag oder eine Sache als Bezahlung an" });
     const order = {
       id: crypto.randomUUID(),
       requester,
       title,
       description: cleanText(body.description, 2000),
-      offer,
-      reward,
-      price: null,
       dueDate: cleanText(body.dueDate, 10) || null,
       status: "neu",
       note: "",
+      paymentMethodId: null,
       paymentMethod: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+    if (!applyMethod(order, body.methodId)) return send(res, 400, { error: "Bitte eine Bezahlart auswählen" });
     orders.push(order);
     saveOrders();
     return send(res, 201, order);
@@ -171,9 +159,10 @@ async function handleApi(req, res, url) {
       if (!STATUSES.includes(body.status)) return send(res, 400, { error: "Ungültiger Status" });
       order.status = body.status;
     }
-    if (body.price !== undefined) order.price = body.price === null ? null : cleanAmount(body.price);
+    if (body.methodId && body.methodId !== order.paymentMethodId && !applyMethod(order, body.methodId)) {
+      return send(res, 400, { error: "Bezahlart unbekannt" });
+    }
     if (body.note !== undefined) order.note = cleanText(body.note, 500);
-    if (body.reward !== undefined) order.reward = cleanText(body.reward, 120);
     order.updatedAt = new Date().toISOString();
     saveOrders();
     return send(res, 200, order);

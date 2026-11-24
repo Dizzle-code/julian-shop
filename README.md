@@ -1,11 +1,11 @@
 # Julian-Shop
 
-Auftragsboard für die Familie: Aufträge erstellen, Julian legt Preis/Status fest, offene Beträge werden pro Person angezeigt.
+Auftragsboard für die Familie: Aufträge erstellen, Julian setzt den Status, offene Bezahlungen werden pro Person angezeigt.
 
 ## Bezahlen
 
-Nach dem Julian-Login erscheint "Zahlungsarten verwalten": dort eigene Zahlungsarten anlegen (Name + Anleitung, z.B. "Bar", "Überweisung" mit IBAN, "Spardose").
-Ist ein Auftrag `erledigt`, wählt das Familienmitglied eine Zahlungsart und meldet die Zahlung. Der Auftrag steht dann auf `Zahlung gemeldet`, bis Julian ihn auf `bezahlt` setzt.
+Nach dem Julian-Login erscheint "Bezahlarten verwalten": dort legst du fest, womit bezahlt werden kann (Name + optionale Beschreibung). Es gibt keine vordefinierten Bezahlarten.
+Beim Erstellen eines Auftrags wählt das Familienmitglied eine dieser Bezahlarten. Ist der Auftrag `erledigt`, meldet es die Bezahlung; der Auftrag steht dann auf `Zahlung gemeldet`, bis Julian ihn auf `bezahlt` setzt.
 
 ## Dokploy
 
