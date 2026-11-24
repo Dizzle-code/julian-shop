@@ -71,12 +71,30 @@ function applyMethod(order, methodId) {
   if (!method) return false;
   order.paymentMethodId = method.id;
   order.paymentMethod = method.name;
+  order.proposal = null;
   return true;
+}
+
+function applyMethodOrProposal(order, body) {
+  const proposal = cleanText(body.proposal, 120);
+  if (proposal) {
+    order.paymentMethodId = null;
+    order.paymentMethod = proposal;
+    order.proposal = { text: proposal, status: "offen" };
+    return true;
+  }
+  return applyMethod(order, body.methodId);
+}
+
+function findOrder(id) {
+  return orders.find((o) => o.id === id);
 }
 
 async function handleApi(req, res, url) {
   const idMatch = url.pathname.match(/^\/api\/orders\/([\w-]+)$/);
   const payMatch = url.pathname.match(/^\/api\/orders\/([\w-]+)\/pay$/);
+  const proposalMatch = url.pathname.match(/^\/api\/orders\/([\w-]+)\/proposal$/);
+  const methodMatch = url.pathname.match(/^\/api\/orders\/([\w-]+)\/method$/);
 
   if (req.method === "GET" && url.pathname === "/api/payment-methods") {
     return send(res, 200, paymentMethods);
@@ -103,7 +121,48 @@ async function handleApi(req, res, url) {
     const order = orders.find((o) => o.id === payMatch[1]);
     if (!order) return send(res, 404, { error: "Auftrag nicht gefunden" });
     if (order.status !== "erledigt") return send(res, 400, { error: "Nur erledigte Aufträge können bezahlt werden" });
+    if (order.proposal && order.proposal.status !== "akzeptiert") {
+      return send(res, 400, { error: "Der Bezahl-Vorschlag ist noch nicht akzeptiert" });
+    }
     order.status = "gemeldet";
+    order.updatedAt = new Date().toISOString();
+    saveOrders();
+    return send(res, 200, order);
+  }
+
+  if (req.method === "POST" && proposalMatch) {
+    if (!isAdmin(req)) return send(res, 401, { error: "Nur Julian darf das" });
+    const order = findOrder(proposalMatch[1]);
+    if (!order) return send(res, 404, { error: "Auftrag nicht gefunden" });
+    if (!order.proposal) return send(res, 400, { error: "Kein Vorschlag vorhanden" });
+    const body = await readBody(req);
+    if (body.action === "accept") {
+      order.proposal.status = "akzeptiert";
+      if (body.save) {
+        const existing = paymentMethods.find((m) => m.name.toLowerCase() === order.proposal.text.toLowerCase());
+        const method = existing ?? { id: crypto.randomUUID(), name: order.proposal.text.slice(0, 50), instructions: "" };
+        if (!existing) {
+          paymentMethods.push(method);
+          saveJson(METHODS_FILE, paymentMethods);
+        }
+        order.paymentMethodId = method.id;
+      }
+    } else if (body.action === "reject") {
+      order.proposal.status = "abgelehnt";
+    } else {
+      return send(res, 400, { error: "Unbekannte Aktion" });
+    }
+    order.updatedAt = new Date().toISOString();
+    saveOrders();
+    return send(res, 200, order);
+  }
+
+  if (req.method === "POST" && methodMatch) {
+    const order = findOrder(methodMatch[1]);
+    if (!order) return send(res, 404, { error: "Auftrag nicht gefunden" });
+    if (order.proposal?.status !== "abgelehnt") return send(res, 400, { error: "Bezahlart kann hier nicht geändert werden" });
+    const body = await readBody(req);
+    if (!applyMethodOrProposal(order, body)) return send(res, 400, { error: "Bitte eine Bezahlart auswählen oder etwas vorschlagen" });
     order.updatedAt = new Date().toISOString();
     saveOrders();
     return send(res, 200, order);
@@ -133,10 +192,11 @@ async function handleApi(req, res, url) {
       note: "",
       paymentMethodId: null,
       paymentMethod: null,
+      proposal: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    if (!applyMethod(order, body.methodId)) return send(res, 400, { error: "Bitte eine Bezahlart auswählen" });
+    if (!applyMethodOrProposal(order, body)) return send(res, 400, { error: "Bitte eine Bezahlart auswählen oder etwas vorschlagen" });
     orders.push(order);
     saveOrders();
     return send(res, 201, order);

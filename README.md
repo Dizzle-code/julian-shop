@@ -5,7 +5,8 @@ Auftragsboard für die Familie: Aufträge erstellen, Julian setzt den Status, of
 ## Bezahlen
 
 Nach dem Julian-Login erscheint "Bezahlarten verwalten": dort legst du fest, womit bezahlt werden kann (Name + optionale Beschreibung). Es gibt keine vordefinierten Bezahlarten.
-Beim Erstellen eines Auftrags wählt das Familienmitglied eine dieser Bezahlarten. Ist der Auftrag `erledigt`, meldet es die Bezahlung; der Auftrag steht dann auf `Zahlung gemeldet`, bis Julian ihn auf `bezahlt` setzt.
+Beim Erstellen eines Auftrags wählt das Familienmitglied eine dieser Bezahlarten oder macht einen eigenen Vorschlag. Vorschläge kann Julian akzeptieren (optional gleich als Bezahlart speichern) oder ablehnen; nach einer Ablehnung kann das Familienmitglied neu wählen.
+Ist der Auftrag `erledigt`, meldet es die Bezahlung; der Auftrag steht dann auf `Zahlung gemeldet`, bis Julian ihn auf `bezahlt` setzt.
 
 ## Dokploy
 

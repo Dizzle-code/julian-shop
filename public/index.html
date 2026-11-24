@@ -73,6 +73,7 @@
   .tags { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
   .tag { font-size:.82rem; padding:5px 11px; border-radius:10px; background:var(--glass-hi); border:1px solid var(--border); font-weight:600; }
   .tag.reward { color:#f0abfc; border-color:rgba(240,171,252,.3); background:rgba(217,70,239,.1); }
+  .tag.proposal { color:#fcd34d; border-color:rgba(252,211,77,.3); background:rgba(252,211,77,.08); }
   .desc { white-space:pre-wrap; margin:12px 0 0; color:#d4d4e0; line-height:1.5; }
   .note { background:rgba(250,204,21,.08); border:1px solid rgba(250,204,21,.25); color:#fde68a; border-radius:12px; padding:10px 12px; margin-top:12px; font-size:.9rem; }
 
@@ -138,9 +139,10 @@
       <label for="description">📝 Details (optional)</label>
       <textarea id="description" maxlength="2000" placeholder="Alles, was ich wissen sollte..."></textarea>
       <div class="row">
-        <div><label for="method">💳 Womit bezahlst du?</label><select id="method" required></select></div>
+        <div><label for="method">💳 Womit bezahlst du?</label><select id="method" data-role="method-select"></select></div>
         <div><label for="dueDate">📅 Bis wann? (optional)</label><input id="dueDate" type="date"></div>
       </div>
+      <input id="proposal" data-role="proposal" class="hidden" maxlength="120" placeholder="💡 Was schlägst du als Bezahlung vor?" style="margin-top:10px">
       <div class="pay-info hidden" id="methodInfo" style="margin-top:10px"></div>
       <button type="submit" class="big">🚀 Auftrag abschicken</button>
       <div id="formError" class="error"></div>
@@ -149,7 +151,7 @@
 
   <section class="card hidden" id="methodsCard">
     <h2>⚙️ Bezahlarten verwalten</h2>
-    <p class="sub">Nur für dich sichtbar. Die Familie kann nur mit diesen Bezahlarten bezahlen.</p>
+    <p class="sub">Nur für dich sichtbar. Die Familie wählt aus diesen Bezahlarten oder schlägt etwas Eigenes vor, das du akzeptieren oder ablehnen kannst.</p>
     <div id="methodsEditor"></div>
     <div style="display:flex; gap:8px">
       <button class="ghost" id="addMethod">➕ Bezahlart</button>
@@ -184,6 +186,22 @@ const state = { orders: [], methods: [], filter: "offen", pin: sessionStorage.ge
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
 const methodById = (id) => state.methods.find((m) => m.id === id);
+const PROPOSAL = "__proposal";
+const PROPOSAL_LABELS = { offen: "⏳ wartet auf Julian", akzeptiert: "✅ akzeptiert", abgelehnt: "❌ abgelehnt" };
+
+function methodOptionsHtml() {
+  const placeholder = state.methods.length ? "Bezahlart auswählen..." : "Noch keine Bezahlarten, mach einen Vorschlag";
+  return `<option value="">${placeholder}</option>`
+    + state.methods.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("")
+    + `<option value="${PROPOSAL}">💡 Eigenen Vorschlag machen...</option>`;
+}
+
+function readMethodChoice(container) {
+  const value = container.querySelector('[data-role="method-select"]').value;
+  return value === PROPOSAL
+    ? { proposal: container.querySelector('[data-role="proposal"]').value }
+    : { methodId: value };
+}
 
 $("requester").value = localStorage.getItem("name") || "";
 
@@ -222,11 +240,8 @@ function renderMethodsEditor() {
 function renderMethodSelect() {
   const select = $("method");
   const current = select.value;
-  select.innerHTML = state.methods.length
-    ? `<option value="">Bezahlart auswählen...</option>` + state.methods.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("")
-    : `<option value="">Julian hat noch keine Bezahlarten angelegt</option>`;
-  select.disabled = !state.methods.length;
-  if (methodById(current)) select.value = current;
+  select.innerHTML = methodOptionsHtml();
+  if (methodById(current) || current === PROPOSAL) select.value = current;
   updateMethodInfo();
 }
 
@@ -234,6 +249,7 @@ function updateMethodInfo() {
   const method = methodById($("method").value);
   $("methodInfo").textContent = method?.instructions || "";
   $("methodInfo").classList.toggle("hidden", !method?.instructions);
+  $("proposal").classList.toggle("hidden", $("method").value !== PROPOSAL);
 }
 
 function readMethodsEditor() {
@@ -284,17 +300,35 @@ function renderOrder(o) {
   const date = new Date(o.createdAt).toLocaleDateString("de-DE");
   const due = o.dueDate ? `<span>📅 bis ${new Date(o.dueDate).toLocaleDateString("de-DE")}</span>` : "";
   const method = methodById(o.paymentMethodId);
-  const methodTag = o.paymentMethod ? `<span class="tag reward">💳 ${esc(o.paymentMethod)}</span>` : "";
-  const payBox = o.status === "erledigt" ? `
+  const proposal = o.proposal;
+  const methodTag = proposal
+    ? `<span class="tag proposal">💡 Vorschlag: ${esc(proposal.text)}</span><span class="tag">${PROPOSAL_LABELS[proposal.status]}</span>`
+    : o.paymentMethod ? `<span class="tag reward">💳 ${esc(o.paymentMethod)}</span>` : "";
+  const canPay = !proposal || proposal.status === "akzeptiert";
+  const payBox = o.status === "erledigt" && canPay ? `
     <div class="pay" data-id="${o.id}">
       ${method?.instructions ? `<div class="pay-info">${esc(method.instructions)}</div>` : ""}
       <div><button data-action="pay">📨 Bezahlung melden</button></div>
     </div>` : "";
+  const rechooseBox = proposal?.status === "abgelehnt" ? `
+    <div class="pay rechoose" data-id="${o.id}">
+      <div class="pay-info">❌ Julian hat deinen Vorschlag abgelehnt. Wähl eine Bezahlart oder schlag etwas anderes vor.</div>
+      <select data-role="method-select">${methodOptionsHtml()}</select>
+      <input data-role="proposal" class="hidden" maxlength="120" placeholder="💡 Neuer Vorschlag">
+      <div><button data-action="rechoose">🔄 Ändern</button></div>
+    </div>` : "";
+  const proposalActions = state.pin && proposal?.status === "offen" ? `
+      <div class="full">
+        <button data-action="accept">✅ Akzeptieren</button>
+        <button class="ghost" data-action="acceptSave">➕ Akzeptieren & als Bezahlart speichern</button>
+        <button class="danger" data-action="reject">❌ Ablehnen</button>
+      </div>` : "";
   const methodOptions = state.methods.map((m) => `<option value="${esc(m.id)}" ${m.id === o.paymentMethodId ? "selected" : ""}>${esc(m.name)}</option>`).join("");
+  const currentLabel = proposal ? `💡 ${esc(proposal.text)}` : `${esc(o.paymentMethod || "keine")} (gelöscht)`;
   const admin = state.pin ? `
-    <div class="admin" data-id="${o.id}">
+    <div class="admin" data-id="${o.id}">${proposalActions}
       <div><label>Status</label><select data-field="status">${STATUSES.map((s) => `<option value="${s}" ${s === o.status ? "selected" : ""}>${STATUS_LABELS[s]}</option>`).join("")}</select></div>
-      <div style="grid-column:span 2"><label>Bezahlart</label><select data-field="method">${method ? "" : `<option value="${esc(o.paymentMethodId ?? "")}" selected>${esc(o.paymentMethod || "keine")} (gelöscht)</option>`}${methodOptions}</select></div>
+      <div style="grid-column:span 2"><label>Bezahlart</label><select data-field="method">${method ? "" : `<option value="" selected>${currentLabel}</option>`}${methodOptions}</select></div>
       <div class="full"><input data-field="note" placeholder="💬 Notiz an ${esc(o.requester)}" value="${esc(o.note)}"></div>
       <div class="full"><button data-action="save">💾 Speichern</button><button class="danger" data-action="delete">🗑️ Löschen</button></div>
     </div>` : "";
@@ -311,11 +345,18 @@ function renderOrder(o) {
       ${o.description ? `<p class="desc">${esc(o.description)}</p>` : ""}
       ${o.note ? `<div class="note">💬 Julian: ${esc(o.note)}</div>` : ""}
       ${payBox}
+      ${rechooseBox}
       ${admin}
     </div>`;
 }
 
 $("method").addEventListener("change", updateMethodInfo);
+
+$("orders").addEventListener("change", (e) => {
+  if (e.target.dataset.role !== "method-select") return;
+  const box = e.target.closest(".rechoose");
+  box.querySelector('[data-role="proposal"]').classList.toggle("hidden", e.target.value !== PROPOSAL);
+});
 
 $("orderForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -327,10 +368,10 @@ $("orderForm").addEventListener("submit", async (e) => {
       requester,
       title: $("title").value,
       description: $("description").value,
-      methodId: $("method").value,
+      ...readMethodChoice($("orderForm")),
       dueDate: $("dueDate").value,
     });
-    for (const id of ["title", "description", "dueDate"]) $(id).value = "";
+    for (const id of ["title", "description", "dueDate", "proposal"]) $(id).value = "";
     toast("🚀 Auftrag ist raus!");
     await load();
   } catch (err) {
@@ -351,10 +392,19 @@ $("orders").addEventListener("click", async (e) => {
   if (!btn) return;
   const box = btn.closest(".admin, .pay");
   const id = box.dataset.id;
+  let renderMethodsEditorAfterLoad = false;
   try {
     if (btn.dataset.action === "pay") {
       await api("POST", `/api/orders/${id}/pay`);
       toast("📨 Gemeldet! Julian checkt das.");
+    } else if (btn.dataset.action === "rechoose") {
+      await api("POST", `/api/orders/${id}/method`, readMethodChoice(box));
+      toast("🔄 Bezahlart geändert");
+    } else if (["accept", "acceptSave", "reject"].includes(btn.dataset.action)) {
+      const action = btn.dataset.action === "reject" ? "reject" : "accept";
+      await api("POST", `/api/orders/${id}/proposal`, { action, save: btn.dataset.action === "acceptSave" });
+      if (btn.dataset.action === "acceptSave") renderMethodsEditorAfterLoad = true;
+      toast(action === "accept" ? "✅ Vorschlag akzeptiert" : "❌ Vorschlag abgelehnt");
     } else if (btn.dataset.action === "delete") {
       if (!confirm("Auftrag wirklich löschen?")) return;
       await api("DELETE", `/api/orders/${id}`);
@@ -369,6 +419,7 @@ $("orders").addEventListener("click", async (e) => {
       toast("💾 Gespeichert");
     }
     await load();
+    if (renderMethodsEditorAfterLoad) renderMethodsEditor();
   } catch (err) {
     toast("⚠️ " + err.message);
   }
@@ -418,7 +469,7 @@ $("loginBtn").addEventListener("click", async () => {
 
 load();
 setInterval(() => {
-  if (document.activeElement?.closest(".pay, .admin, #methodsEditor")) return;
+  if (document.activeElement?.closest(".pay, .admin, #methodsEditor, #orderForm")) return;
   load();
 }, 30000);
 </script>
