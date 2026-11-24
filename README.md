@@ -8,6 +8,14 @@ Nach dem Julian-Login erscheint "Bezahlarten verwalten": dort legst du fest, wom
 Beim Erstellen eines Auftrags wählt das Familienmitglied eine dieser Bezahlarten oder macht einen eigenen Vorschlag. Vorschläge kann Julian akzeptieren (optional gleich als Bezahlart speichern) oder ablehnen; nach einer Ablehnung kann das Familienmitglied neu wählen.
 Ist der Auftrag `erledigt`, meldet es die Bezahlung; der Auftrag steht dann auf `Zahlung gemeldet`, bis Julian ihn auf `bezahlt` setzt.
 
+## Benachrichtigungen (Web Push)
+
+- Familie: Nach dem Abschicken eines Auftrags fragt die Seite nach Benachrichtigungen. Danach gibt es Pushes bei Statuswechsel (angenommen, erledigt, bezahlt, abgelehnt), angenommenem/abgelehntem Bezahl-Vorschlag, geänderter Bezahlart und neuen Notizen.
+- Julian: Beim Admin-Login wird gefragt. Pushes bei neuem Auftrag, neuem Bezahl-Vorschlag und gemeldeter Bezahlung.
+- **Voraussetzung: HTTPS.** Browser erlauben Push nur über `https://` (oder `localhost`). Über `http://julian.local` bzw. `http://<ip>:5731` geht es nicht.
+- iPhone/iPad (ab iOS 16.4): Seite über Teilen -> "Zum Home-Bildschirm" hinzufügen und von dort öffnen.
+- Die VAPID-Schlüssel werden beim ersten Start erzeugt und in `/data/vapid-keys.json` gespeichert. Optional: `VAPID_SUBJECT` (z.B. `mailto:du@example.com`).
+
 ## Dokploy
 
 1. Create Service -> Compose -> Inhalt von `dokploy-compose.yml` einfügen.

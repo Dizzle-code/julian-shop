@@ -2,12 +2,16 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const webpush = require("web-push");
 
 const PORT = Number(process.env.PORT || 5731);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const ORDERS_FILE = path.join(DATA_DIR, "orders.json");
 const METHODS_FILE = path.join(DATA_DIR, "payment-methods.json");
+const SUBSCRIPTIONS_FILE = path.join(DATA_DIR, "push-subscriptions.json");
+const VAPID_FILE = path.join(DATA_DIR, "vapid-keys.json");
 const ADMIN_PIN = process.env.ADMIN_PIN || "1234";
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "mailto:julian-shop@example.com";
 const PUBLIC_DIR = path.join(__dirname, "public");
 
 const STATUSES = ["neu", "angenommen", "erledigt", "gemeldet", "bezahlt", "abgelehnt"];
@@ -30,8 +34,74 @@ function saveJson(file, value) {
 
 let orders = loadJson(ORDERS_FILE, []);
 let paymentMethods = loadJson(METHODS_FILE, []);
+let subscriptions = loadJson(SUBSCRIPTIONS_FILE, []);
+
+let vapidKeys = loadJson(VAPID_FILE, null);
+if (!vapidKeys) {
+  vapidKeys = webpush.generateVAPIDKeys();
+  saveJson(VAPID_FILE, vapidKeys);
+}
+webpush.setVapidDetails(VAPID_SUBJECT, vapidKeys.publicKey, vapidKeys.privateKey);
 
 const saveOrders = () => saveJson(ORDERS_FILE, orders);
+const saveSubscriptions = () => saveJson(SUBSCRIPTIONS_FILE, subscriptions);
+
+const STATUS_MESSAGES = {
+  angenommen: "⏳ Julian hat deinen Auftrag angenommen und ist dran.",
+  erledigt: "✅ Dein Auftrag ist fertig! Du kannst jetzt bezahlen.",
+  bezahlt: "💚 Bezahlung bestätigt. Danke!",
+  abgelehnt: "❌ Julian hat deinen Auftrag abgelehnt.",
+};
+
+function isValidSubscription(sub) {
+  try {
+    return new URL(sub.endpoint).protocol === "https:"
+      && typeof sub.keys?.p256dh === "string"
+      && typeof sub.keys?.auth === "string";
+  } catch {
+    return false;
+  }
+}
+
+function addSubscription(sub, { admin = false, orderId = null }) {
+  let entry = subscriptions.find((s) => s.endpoint === sub.endpoint);
+  if (!entry) {
+    entry = { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth }, admin: false, orderIds: [] };
+    subscriptions.push(entry);
+  }
+  entry.keys = { p256dh: sub.keys.p256dh, auth: sub.keys.auth };
+  if (admin) entry.admin = true;
+  if (orderId && !entry.orderIds.includes(orderId)) entry.orderIds.push(orderId);
+  saveSubscriptions();
+}
+
+async function pushTo(targets, payload) {
+  const json = JSON.stringify(payload);
+  const results = await Promise.allSettled(
+    targets.map((s) => webpush.sendNotification({ endpoint: s.endpoint, keys: s.keys }, json, { TTL: 86400 })),
+  );
+  const gone = new Set();
+  results.forEach((result, i) => {
+    if (result.status === "fulfilled") return;
+    const code = result.reason?.statusCode;
+    if (code === 404 || code === 410) gone.add(targets[i].endpoint);
+    else console.error("Push fehlgeschlagen:", code ?? result.reason?.message);
+  });
+  if (gone.size) {
+    subscriptions = subscriptions.filter((s) => !gone.has(s.endpoint));
+    saveSubscriptions();
+  }
+}
+
+function notifyFamily(order, body) {
+  const targets = subscriptions.filter((s) => s.orderIds.includes(order.id));
+  if (targets.length) pushTo(targets, { title: order.title, body, tag: order.id });
+}
+
+function notifyAdmin(title, body, order) {
+  const targets = subscriptions.filter((s) => s.admin);
+  if (targets.length) pushTo(targets, { title, body, tag: "admin-" + order.id });
+}
 
 function isAdmin(req) {
   const given = crypto.createHash("sha256").update(String(req.headers["x-admin-pin"] || "")).digest();
@@ -127,6 +197,7 @@ async function handleApi(req, res, url) {
     order.status = "gemeldet";
     order.updatedAt = new Date().toISOString();
     saveOrders();
+    notifyAdmin("📨 Bezahlung gemeldet", `${order.requester}: ${order.title} (${order.paymentMethod})`, order);
     return send(res, 200, order);
   }
 
@@ -154,6 +225,9 @@ async function handleApi(req, res, url) {
     }
     order.updatedAt = new Date().toISOString();
     saveOrders();
+    notifyFamily(order, order.proposal.status === "akzeptiert"
+      ? `✅ Julian hat deinen Bezahl-Vorschlag "${order.proposal.text}" akzeptiert.`
+      : `❌ Julian hat deinen Bezahl-Vorschlag "${order.proposal.text}" abgelehnt. Wähl bitte etwas anderes.`);
     return send(res, 200, order);
   }
 
@@ -165,7 +239,25 @@ async function handleApi(req, res, url) {
     if (!applyMethodOrProposal(order, body)) return send(res, 400, { error: "Bitte eine Bezahlart auswählen oder etwas vorschlagen" });
     order.updatedAt = new Date().toISOString();
     saveOrders();
+    notifyAdmin(
+      order.proposal ? "💡 Neuer Bezahl-Vorschlag" : "🔄 Bezahlart gewählt",
+      `${order.requester}: ${order.title} (${order.paymentMethod})`,
+      order,
+    );
     return send(res, 200, order);
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/push/key") {
+    return send(res, 200, { publicKey: vapidKeys.publicKey });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/push/subscribe") {
+    const body = await readBody(req);
+    if (!isValidSubscription(body.subscription ?? {})) return send(res, 400, { error: "Ungültige Subscription" });
+    if (body.admin && !isAdmin(req)) return send(res, 401, { error: "Nur Julian darf das" });
+    if (body.orderId && !findOrder(body.orderId)) return send(res, 404, { error: "Auftrag nicht gefunden" });
+    addSubscription(body.subscription, { admin: Boolean(body.admin), orderId: body.orderId });
+    return send(res, 200, { ok: true });
   }
 
   if (req.method === "POST" && url.pathname === "/api/login") {
@@ -199,6 +291,7 @@ async function handleApi(req, res, url) {
     if (!applyMethodOrProposal(order, body)) return send(res, 400, { error: "Bitte eine Bezahlart auswählen oder etwas vorschlagen" });
     orders.push(order);
     saveOrders();
+    notifyAdmin("🆕 Neuer Auftrag", `${requester}: ${title} (${order.proposal ? "Vorschlag: " : ""}${order.paymentMethod})`, order);
     return send(res, 201, order);
   }
 
@@ -210,11 +303,16 @@ async function handleApi(req, res, url) {
     if (req.method === "DELETE") {
       orders.splice(index, 1);
       saveOrders();
+      const deletedId = idMatch[1];
+      subscriptions.forEach((s) => { s.orderIds = s.orderIds.filter((id) => id !== deletedId); });
+      subscriptions = subscriptions.filter((s) => s.admin || s.orderIds.length);
+      saveSubscriptions();
       return send(res, 200, { ok: true });
     }
 
     const body = await readBody(req);
     const order = orders[index];
+    const before = { status: order.status, method: order.paymentMethod, note: order.note };
     if (body.status !== undefined) {
       if (!STATUSES.includes(body.status)) return send(res, 400, { error: "Ungültiger Status" });
       order.status = body.status;
@@ -225,20 +323,34 @@ async function handleApi(req, res, url) {
     if (body.note !== undefined) order.note = cleanText(body.note, 500);
     order.updatedAt = new Date().toISOString();
     saveOrders();
+    const messages = [];
+    if (order.status !== before.status && STATUS_MESSAGES[order.status]) messages.push(STATUS_MESSAGES[order.status]);
+    if (order.paymentMethod !== before.method) messages.push(`💳 Bezahlart: ${order.paymentMethod}`);
+    if (order.note && order.note !== before.note) messages.push(`💬 Julian: ${order.note}`);
+    if (messages.length) notifyFamily(order, messages.join("\n"));
     return send(res, 200, order);
   }
 
   return send(res, 404, { error: "Nicht gefunden" });
 }
 
-const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
+const MIME = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript",
+  ".css": "text/css",
+  ".svg": "image/svg+xml",
+  ".webmanifest": "application/manifest+json",
+};
 
 function serveStatic(res, url) {
   const file = path.normalize(path.join(PUBLIC_DIR, url.pathname === "/" ? "index.html" : url.pathname));
   if (!file.startsWith(PUBLIC_DIR)) return send(res, 403, { error: "Verboten" });
   fs.readFile(file, (err, content) => {
     if (err) return send(res, 404, { error: "Nicht gefunden" });
-    res.writeHead(200, { "Content-Type": MIME[path.extname(file)] || "application/octet-stream" });
+    res.writeHead(200, {
+      "Content-Type": MIME[path.extname(file)] || "application/octet-stream",
+      "Cache-Control": "no-cache",
+    });
     res.end(content);
   });
 }

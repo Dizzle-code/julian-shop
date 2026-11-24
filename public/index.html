@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Julian-Shop ✨</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<meta name="theme-color" content="#07070c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap" rel="stylesheet">
 <style>
@@ -149,6 +155,12 @@
     </form>
   </section>
 
+  <section class="card hidden" id="notifyCard">
+    <h2>🔔 Benachrichtigungen</h2>
+    <p class="sub" id="notifyStatus">Bekomm eine Nachricht aufs Handy, sobald ein neuer Auftrag reinkommt.</p>
+    <button id="notifyBtn">🔔 Auf diesem Gerät aktivieren</button>
+  </section>
+
   <section class="card hidden" id="methodsCard">
     <h2>⚙️ Bezahlarten verwalten</h2>
     <p class="sub">Nur für dich sichtbar. Die Familie wählt aus diesen Bezahlarten oder schlägt etwas Eigenes vor, das du akzeptieren oder ablehnen kannst.</p>
@@ -264,6 +276,8 @@ function render() {
   $("loginBtn").textContent = state.pin ? "👋 Logout" : "🔐 Julian-Login";
   const wasHidden = $("methodsCard").classList.contains("hidden");
   $("methodsCard").classList.toggle("hidden", !state.pin);
+  $("notifyCard").classList.toggle("hidden", !state.pin);
+  if (state.pin) renderNotifyStatus();
   if (state.pin && wasHidden) renderMethodsEditor();
   renderMethodSelect();
   const me = localStorage.getItem("name") || "";
@@ -352,6 +366,64 @@ function renderOrder(o) {
 
 $("method").addEventListener("change", updateMethodInfo);
 
+const pushSupported = window.isSecureContext && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const swReady = pushSupported
+  ? navigator.serviceWorker.register("/sw.js").then(() => navigator.serviceWorker.ready).catch(() => null)
+  : Promise.resolve(null);
+
+function pushUnsupportedReason() {
+  if (!window.isSecureContext) return "🔔 Benachrichtigungen gehen nur über HTTPS.";
+  if (/iPhone|iPad|iPod/.test(navigator.userAgent) && !navigator.standalone) {
+    return "🔔 iPhone: Erst über Teilen → „Zum Home-Bildschirm“ hinzufügen und von dort öffnen.";
+  }
+  return "🔔 Dein Browser unterstützt keine Benachrichtigungen.";
+}
+
+function askPermission() {
+  if (!pushSupported) return Promise.resolve("unsupported");
+  if (Notification.permission !== "default") return Promise.resolve(Notification.permission);
+  return Notification.requestPermission();
+}
+
+function base64UrlToBytes(value) {
+  const base64 = (value + "=".repeat((4 - (value.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+}
+
+function sameKey(buffer, bytes) {
+  if (!buffer) return false;
+  const current = new Uint8Array(buffer);
+  return current.length === bytes.length && current.every((b, i) => b === bytes[i]);
+}
+
+async function enablePush(permissionPromise, target) {
+  const permission = await permissionPromise;
+  if (permission === "unsupported") return "unsupported";
+  if (permission !== "granted") return "denied";
+  const registration = await swReady;
+  if (!registration) return "unsupported";
+  const key = base64UrlToBytes((await api("GET", "/api/push/key")).publicKey);
+  let subscription = await registration.pushManager.getSubscription();
+  if (subscription && !sameKey(subscription.options.applicationServerKey, key)) {
+    await subscription.unsubscribe();
+    subscription = null;
+  }
+  subscription ??= await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  await api("POST", "/api/push/subscribe", { subscription: subscription.toJSON(), ...target });
+  return "granted";
+}
+
+function renderNotifyStatus() {
+  const permission = pushSupported ? Notification.permission : "unsupported";
+  $("notifyStatus").textContent = {
+    granted: "✅ Aktiv. Du bekommst eine Nachricht, sobald ein neuer Auftrag reinkommt.",
+    denied: "⛔ Blockiert. Erlaube Benachrichtigungen in den Browser-Einstellungen für diese Seite.",
+    default: "Bekomm eine Nachricht aufs Handy, sobald ein neuer Auftrag reinkommt.",
+    unsupported: pushUnsupportedReason(),
+  }[permission];
+  $("notifyBtn").classList.toggle("hidden", permission !== "default");
+}
+
 $("orders").addEventListener("change", (e) => {
   if (e.target.dataset.role !== "method-select") return;
   const box = e.target.closest(".rechoose");
@@ -361,10 +433,11 @@ $("orders").addEventListener("change", (e) => {
 $("orderForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   $("formError").textContent = "";
+  const permission = askPermission();
   try {
     const requester = $("requester").value.trim();
     localStorage.setItem("name", requester);
-    await api("POST", "/api/orders", {
+    const order = await api("POST", "/api/orders", {
       requester,
       title: $("title").value,
       description: $("description").value,
@@ -374,6 +447,12 @@ $("orderForm").addEventListener("submit", async (e) => {
     for (const id of ["title", "description", "dueDate", "proposal"]) $(id).value = "";
     toast("🚀 Auftrag ist raus!");
     await load();
+    const result = await enablePush(permission, { orderId: order.id }).catch(() => "error");
+    if (result === "granted") toast("🔔 Du bekommst Updates zu diesem Auftrag aufs Handy");
+    if (result === "unsupported" && !sessionStorage.getItem("pushHintShown")) {
+      sessionStorage.setItem("pushHintShown", "1");
+      setTimeout(() => toast(pushUnsupportedReason()), 2800);
+    }
   } catch (err) {
     $("formError").textContent = err.message;
   }
@@ -455,11 +534,13 @@ $("loginBtn").addEventListener("click", async () => {
   }
   const pin = prompt("PIN eingeben:");
   if (!pin) return;
+  const permission = askPermission();
   state.pin = pin;
   try {
     await api("POST", "/api/login");
     sessionStorage.setItem("adminPin", pin);
     toast("😎 Willkommen zurück, Boss");
+    enablePush(permission, { admin: true }).catch(() => {}).finally(renderNotifyStatus);
   } catch (err) {
     state.pin = "";
     toast("⚠️ " + err.message);
@@ -467,6 +548,15 @@ $("loginBtn").addEventListener("click", async () => {
   render();
 });
 
+$("notifyBtn").addEventListener("click", async () => {
+  const result = await enablePush(askPermission(), { admin: true }).catch(() => "error");
+  if (result === "error") toast("⚠️ Aktivieren hat nicht geklappt");
+  renderNotifyStatus();
+});
+
+if (state.pin && pushSupported && Notification.permission === "granted") {
+  enablePush(Promise.resolve("granted"), { admin: true }).catch(() => {});
+}
 load();
 setInterval(() => {
   if (document.activeElement?.closest(".pay, .admin, #methodsEditor, #orderForm")) return;
