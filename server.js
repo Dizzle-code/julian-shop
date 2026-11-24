@@ -103,10 +103,15 @@ async function handleApi(req, res, url) {
     if (!order) return send(res, 404, { error: "Auftrag nicht gefunden" });
     if (order.status !== "erledigt") return send(res, 400, { error: "Nur erledigte Aufträge können bezahlt werden" });
     const body = await readBody(req);
-    const method = paymentMethods.find((m) => m.id === body.methodId);
-    if (!method) return send(res, 400, { error: "Zahlungsart unbekannt" });
+    const amount = order.price ?? order.offer;
+    let methodName = "Übergabe";
+    if (amount > 0) {
+      const method = paymentMethods.find((m) => m.id === body.methodId);
+      if (!method) return send(res, 400, { error: "Zahlungsart unbekannt" });
+      methodName = method.name;
+    }
     order.status = "gemeldet";
-    order.paymentMethod = method.name;
+    order.paymentMethod = methodName;
     order.updatedAt = new Date().toISOString();
     saveOrders();
     return send(res, 200, order);
@@ -126,12 +131,16 @@ async function handleApi(req, res, url) {
     const requester = cleanText(body.requester, 50);
     const title = cleanText(body.title, 120);
     if (!requester || !title) return send(res, 400, { error: "Name und Titel sind Pflicht" });
+    const offer = cleanAmount(body.offer) ?? 0;
+    const reward = cleanText(body.reward, 120);
+    if (offer === 0 && !reward) return send(res, 400, { error: "Gib einen Betrag oder eine Sache als Bezahlung an" });
     const order = {
       id: crypto.randomUUID(),
       requester,
       title,
       description: cleanText(body.description, 2000),
-      offer: cleanAmount(body.offer) ?? 0,
+      offer,
+      reward,
       price: null,
       dueDate: cleanText(body.dueDate, 10) || null,
       status: "neu",
@@ -164,6 +173,7 @@ async function handleApi(req, res, url) {
     }
     if (body.price !== undefined) order.price = body.price === null ? null : cleanAmount(body.price);
     if (body.note !== undefined) order.note = cleanText(body.note, 500);
+    if (body.reward !== undefined) order.reward = cleanText(body.reward, 120);
     order.updatedAt = new Date().toISOString();
     saveOrders();
     return send(res, 200, order);
