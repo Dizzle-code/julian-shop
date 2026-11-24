@@ -1,0 +1,10 @@
+{
+  "name": "julian-shop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Auftragsboard für die Familie",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

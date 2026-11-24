@@ -1,0 +1,17 @@
+# In Dokploy: Create Service -> Compose -> diesen Inhalt einfügen.
+# Docker baut das Image direkt aus dem GitHub-Repo, kein Registry-Login nötig.
+services:
+  app:
+    build:
+      context: https://github.com/Dizzle-code/julian-shop.git#main
+    restart: unless-stopped
+    ports:
+      - "5731:5731"
+    environment:
+      ADMIN_PIN: "bitte-aendern"
+      PAYPAL_ME: ""
+    volumes:
+      - shop-data:/data
+
+volumes:
+  shop-data:

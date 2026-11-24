@@ -1,0 +1,29 @@
+services:
+  app:
+    build: .
+    container_name: julian-shop
+    restart: unless-stopped
+    ports:
+      - "5731:5731"
+    environment:
+      ADMIN_PIN: "bitte-aendern"
+      PAYPAL_ME: ""
+    volumes:
+      - shop-data:/data
+
+  # Optional: macht die Seite ohne Port unter http://julian.local erreichbar.
+  # Start mit: docker compose --profile proxy up -d
+  proxy:
+    image: caddy:2-alpine
+    container_name: julian-shop-proxy
+    restart: unless-stopped
+    profiles: ["proxy"]
+    ports:
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - app
+
+volumes:
+  shop-data:

@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Julian-Shop</title>
+<style>
+  :root { --bg:#f4f5f7; --card:#fff; --text:#1d2330; --muted:#6b7280; --accent:#2563eb; --border:#e5e7eb; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--text); }
+  header { background:var(--accent); color:#fff; padding:16px 20px; display:flex; justify-content:space-between; align-items:center; }
+  header h1 { margin:0; font-size:1.4rem; }
+  main { max-width:820px; margin:0 auto; padding:20px; display:grid; gap:20px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; }
+  h2 { margin:0 0 12px; font-size:1.1rem; }
+  label { display:block; font-size:.85rem; color:var(--muted); margin:8px 0 4px; }
+  input, textarea, select { width:100%; padding:9px 10px; border:1px solid var(--border); border-radius:8px; font:inherit; }
+  textarea { min-height:70px; resize:vertical; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:9px 14px; font:inherit; cursor:pointer; }
+  button.secondary { background:#e5e7eb; color:var(--text); }
+  button.danger { background:#dc2626; }
+  header button { background:rgba(255,255,255,.2); }
+  .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  .filters button { background:#e5e7eb; color:var(--text); }
+  .filters button.active { background:var(--accent); color:#fff; }
+  .order { border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px; }
+  .order-head { display:flex; justify-content:space-between; gap:10px; align-items:start; }
+  .order h3 { margin:0; font-size:1rem; }
+  .meta { color:var(--muted); font-size:.85rem; margin-top:4px; }
+  .desc { white-space:pre-wrap; margin:8px 0 0; }
+  .note { background:#fef9c3; border-radius:6px; padding:6px 8px; margin-top:8px; font-size:.9rem; }
+  .badge { font-size:.75rem; padding:3px 8px; border-radius:99px; white-space:nowrap; font-weight:600; }
+  .s-neu { background:#dbeafe; color:#1e40af; }
+  .s-angenommen { background:#fef3c7; color:#92400e; }
+  .s-erledigt { background:#ede9fe; color:#5b21b6; }
+  .s-bezahlt { background:#dcfce7; color:#166534; }
+  .s-abgelehnt { background:#fee2e2; color:#991b1b; }
+  .price { font-weight:700; }
+  .admin { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); }
+  .admin .full { grid-column:1 / -1; display:flex; gap:8px; }
+  .balances { display:flex; flex-wrap:wrap; gap:10px; }
+  .balance { background:var(--bg); border-radius:8px; padding:8px 12px; }
+  .empty { color:var(--muted); text-align:center; padding:20px; }
+  .error { color:#dc2626; margin-top:8px; }
+  a.pay { display:inline-block; margin-top:8px; color:var(--accent); font-weight:600; }
+  @media (max-width:560px) { .row, .admin { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Julian-Shop</h1>
+  <button id="loginBtn">Julian-Login</button>
+</header>
+<main>
+  <section class="card">
+    <h2>Neuer Auftrag</h2>
+    <form id="orderForm">
+      <div class="row">
+        <div><label for="requester">Dein Name</label><input id="requester" required maxlength="50"></div>
+        <div><label for="title">Was soll ich machen?</label><input id="title" required maxlength="120"></div>
+      </div>
+      <label for="description">Details (optional)</label>
+      <textarea id="description" maxlength="2000"></textarea>
+      <div class="row">
+        <div><label for="offer">Dein Angebot (€)</label><input id="offer" type="number" min="0" step="0.5" value="5"></div>
+        <div><label for="dueDate">Bis wann? (optional)</label><input id="dueDate" type="date"></div>
+      </div>
+      <div style="margin-top:12px"><button type="submit">Auftrag abschicken</button></div>
+      <div id="formError" class="error"></div>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Offene Beträge</h2>
+    <div id="balances" class="balances"></div>
+  </section>
+
+  <section class="card">
+    <h2>Aufträge</h2>
+    <div class="filters" id="filters">
+      <button data-filter="offen" class="active">Offen</button>
+      <button data-filter="meine">Meine</button>
+      <button data-filter="alle">Alle</button>
+    </div>
+    <div id="orders"></div>
+  </section>
+</main>
+
+<script>
+const STATUSES = ["neu", "angenommen", "erledigt", "bezahlt", "abgelehnt"];
+const state = { orders: [], filter: "offen", pin: sessionStorage.getItem("adminPin") || "", paypalMe: "" };
+const $ = (id) => document.getElementById(id);
+const euro = (n) => (n ?? 0).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+const amountOf = (o) => o.price ?? o.offer;
+
+$("requester").value = localStorage.getItem("name") || "";
+
+async function api(method, url, body) {
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json", "X-Admin-Pin": state.pin },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Fehler");
+  return data;
+}
+
+async function load() {
+  state.orders = await api("GET", "/api/orders");
+  render();
+}
+
+function render() {
+  $("loginBtn").textContent = state.pin ? "Logout (Julian)" : "Julian-Login";
+  const me = localStorage.getItem("name") || "";
+
+  const balances = {};
+  for (const o of state.orders) {
+    if (o.status === "erledigt") balances[o.requester] = (balances[o.requester] || 0) + amountOf(o);
+  }
+  const entries = Object.entries(balances);
+  $("balances").innerHTML = entries.length
+    ? entries.map(([name, sum]) => `<div class="balance">${esc(name)}: <span class="price">${euro(sum)}</span></div>`).join("")
+    : `<div class="empty" style="padding:0">Alles bezahlt.</div>`;
+
+  const list = state.orders.filter((o) => {
+    if (state.filter === "offen") return !["bezahlt", "abgelehnt"].includes(o.status);
+    if (state.filter === "meine") return o.requester.toLowerCase() === me.toLowerCase();
+    return true;
+  });
+
+  $("orders").innerHTML = list.length ? list.map(renderOrder).join("") : `<div class="empty">Keine Aufträge.</div>`;
+}
+
+function renderOrder(o) {
+  const date = new Date(o.createdAt).toLocaleDateString("de-DE");
+  const due = o.dueDate ? ` · bis ${new Date(o.dueDate).toLocaleDateString("de-DE")}` : "";
+  const priceInfo = o.price != null && o.price !== o.offer
+    ? `<span class="price">${euro(o.price)}</span> <s>${euro(o.offer)}</s>`
+    : `<span class="price">${euro(o.offer)}</span>`;
+  const payLink = state.paypalMe && o.status === "erledigt"
+    ? `<a class="pay" target="_blank" rel="noopener" href="https://paypal.me/${encodeURIComponent(state.paypalMe)}/${amountOf(o)}EUR">Jetzt mit PayPal bezahlen</a>`
+    : "";
+  const admin = state.pin ? `
+    <div class="admin" data-id="${o.id}">
+      <div><label>Status</label><select data-field="status">${STATUSES.map((s) => `<option ${s === o.status ? "selected" : ""}>${s}</option>`).join("")}</select></div>
+      <div><label>Preis (€)</label><input data-field="price" type="number" min="0" step="0.5" value="${o.price ?? ""}" placeholder="${o.offer}"></div>
+      <div class="full"><input data-field="note" placeholder="Notiz an ${esc(o.requester)}" value="${esc(o.note)}"></div>
+      <div class="full"><button data-action="save">Speichern</button><button class="danger" data-action="delete">Löschen</button></div>
+    </div>` : "";
+  return `
+    <div class="order">
+      <div class="order-head">
+        <div>
+          <h3>${esc(o.title)}</h3>
+          <div class="meta">${esc(o.requester)} · ${date}${due} · ${priceInfo}</div>
+        </div>
+        <span class="badge s-${o.status}">${o.status}</span>
+      </div>
+      ${o.description ? `<p class="desc">${esc(o.description)}</p>` : ""}
+      ${o.note ? `<div class="note">Julian: ${esc(o.note)}</div>` : ""}
+      ${payLink}
+      ${admin}
+    </div>`;
+}
+
+$("orderForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("formError").textContent = "";
+  try {
+    const requester = $("requester").value.trim();
+    localStorage.setItem("name", requester);
+    await api("POST", "/api/orders", {
+      requester,
+      title: $("title").value,
+      description: $("description").value,
+      offer: $("offer").value,
+      dueDate: $("dueDate").value,
+    });
+    $("title").value = "";
+    $("description").value = "";
+    $("dueDate").value = "";
+    await load();
+  } catch (err) {
+    $("formError").textContent = err.message;
+  }
+});
+
+$("filters").addEventListener("click", (e) => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+  state.filter = btn.dataset.filter;
+  document.querySelectorAll("#filters button").forEach((b) => b.classList.toggle("active", b === btn));
+  render();
+});
+
+$("orders").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-action]");
+  if (!btn) return;
+  const box = btn.closest(".admin");
+  const id = box.dataset.id;
+  try {
+    if (btn.dataset.action === "delete") {
+      if (!confirm("Auftrag wirklich löschen?")) return;
+      await api("DELETE", `/api/orders/${id}`);
+    } else {
+      const field = (name) => box.querySelector(`[data-field="${name}"]`).value;
+      await api("PATCH", `/api/orders/${id}`, {
+        status: field("status"),
+        price: field("price") === "" ? null : field("price"),
+        note: field("note"),
+      });
+    }
+    await load();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+$("loginBtn").addEventListener("click", async () => {
+  if (state.pin) {
+    state.pin = "";
+    sessionStorage.removeItem("adminPin");
+    return render();
+  }
+  const pin = prompt("PIN eingeben:");
+  if (!pin) return;
+  state.pin = pin;
+  try {
+    await api("POST", "/api/login");
+    sessionStorage.setItem("adminPin", pin);
+  } catch (err) {
+    state.pin = "";
+    alert(err.message);
+  }
+  render();
+});
+
+api("GET", "/api/config").then((cfg) => { state.paypalMe = cfg.paypalMe; render(); });
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>
