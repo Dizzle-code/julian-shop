@@ -1,9 +1,9 @@
 # In Dokploy: Create Service -> Compose -> diesen Inhalt einfügen.
-# Docker baut das Image direkt aus dem GitHub-Repo, kein Registry-Login nötig.
+# Das Image wird von GitHub Actions gebaut, der Server lädt es nur herunter.
 services:
   app:
-    build:
-      context: https://github.com/Dizzle-code/julian-shop.git#main
+    image: ghcr.io/dizzle-code/julian-shop:latest
+    pull_policy: always
     restart: unless-stopped
     ports:
       - "5731:5731"

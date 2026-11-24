@@ -14,7 +14,7 @@ Ist ein Auftrag `erledigt`, wählt das Familienmitglied eine Zahlungsart und mel
 3. Erreichbar unter `http://<server-ip>:5731`.
 4. Optional ohne Port: in Dokploy unter "Domains" `julian.local` -> Service `app`, Port `5731`, HTTPS aus (Avahi-Schritt unten trotzdem nötig).
 
-Updates: Code pushen, in Dokploy neu deployen.
+Updates: Code pushen, GitHub Actions baut das Image neu (ca. 1-2 Min.), dann in Dokploy neu deployen.
 
 ## Starten (ohne Dokploy)
 
