@@ -7,7 +7,6 @@ services:
       - "5731:5731"
     environment:
       ADMIN_PIN: "bitte-aendern"
-      PAYPAL_ME: ""
     volumes:
       - shop-data:/data
 

@@ -34,6 +34,7 @@
   .s-neu { background:#dbeafe; color:#1e40af; }
   .s-angenommen { background:#fef3c7; color:#92400e; }
   .s-erledigt { background:#ede9fe; color:#5b21b6; }
+  .s-gemeldet { background:#cffafe; color:#155e75; }
   .s-bezahlt { background:#dcfce7; color:#166534; }
   .s-abgelehnt { background:#fee2e2; color:#991b1b; }
   .price { font-weight:700; }
@@ -43,7 +44,12 @@
   .balance { background:var(--bg); border-radius:8px; padding:8px 12px; }
   .empty { color:var(--muted); text-align:center; padding:20px; }
   .error { color:#dc2626; margin-top:8px; }
-  a.pay { display:inline-block; margin-top:8px; color:var(--accent); font-weight:600; }
+  .pay { margin-top:10px; display:grid; gap:8px; }
+  .pay-info { background:var(--bg); border-radius:6px; padding:8px; white-space:pre-wrap; font-size:.9rem; }
+  .method { display:grid; grid-template-columns:1fr 2fr auto; gap:8px; margin-bottom:8px; }
+  .method textarea { min-height:40px; }
+  .hidden { display:none; }
+  @media (max-width:560px) { .method { grid-template-columns:1fr; } }
   @media (max-width:560px) { .row, .admin { grid-template-columns:1fr; } }
 </style>
 </head>
@@ -71,6 +77,15 @@
     </form>
   </section>
 
+  <section class="card hidden" id="methodsCard">
+    <h2>Zahlungsarten verwalten</h2>
+    <div id="methodsEditor"></div>
+    <div style="display:flex; gap:8px">
+      <button class="secondary" id="addMethod">+ Zahlungsart</button>
+      <button id="saveMethods">Speichern</button>
+    </div>
+  </section>
+
   <section class="card">
     <h2>Offene Beträge</h2>
     <div id="balances" class="balances"></div>
@@ -88,8 +103,9 @@
 </main>
 
 <script>
-const STATUSES = ["neu", "angenommen", "erledigt", "bezahlt", "abgelehnt"];
-const state = { orders: [], filter: "offen", pin: sessionStorage.getItem("adminPin") || "", paypalMe: "" };
+const STATUS_LABELS = { neu: "neu", angenommen: "angenommen", erledigt: "erledigt", gemeldet: "Zahlung gemeldet", bezahlt: "bezahlt", abgelehnt: "abgelehnt" };
+const STATUSES = Object.keys(STATUS_LABELS);
+const state = { orders: [], methods: [], filter: "offen", pin: sessionStorage.getItem("adminPin") || "" };
 const $ = (id) => document.getElementById(id);
 const euro = (n) => (n ?? 0).toLocaleString("de-DE", { style: "currency", currency: "EUR" });
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
@@ -109,17 +125,37 @@ async function api(method, url, body) {
 }
 
 async function load() {
-  state.orders = await api("GET", "/api/orders");
+  [state.orders, state.methods] = await Promise.all([api("GET", "/api/orders"), api("GET", "/api/payment-methods")]);
   render();
+}
+
+function renderMethodsEditor() {
+  $("methodsEditor").innerHTML = state.methods.map((m) => `
+    <div class="method" data-id="${esc(m.id)}">
+      <input data-field="name" placeholder="Name, z.B. Überweisung" value="${esc(m.name)}">
+      <textarea data-field="instructions" placeholder="Anleitung, z.B. IBAN oder 'in die Spardose legen'">${esc(m.instructions)}</textarea>
+      <button class="danger" data-action="remove">X</button>
+    </div>`).join("") || `<div class="empty">Noch keine Zahlungsarten.</div>`;
+}
+
+function readMethodsEditor() {
+  return [...document.querySelectorAll("#methodsEditor .method")].map((row) => ({
+    id: row.dataset.id,
+    name: row.querySelector('[data-field="name"]').value,
+    instructions: row.querySelector('[data-field="instructions"]').value,
+  }));
 }
 
 function render() {
   $("loginBtn").textContent = state.pin ? "Logout (Julian)" : "Julian-Login";
+  const wasHidden = $("methodsCard").classList.contains("hidden");
+  $("methodsCard").classList.toggle("hidden", !state.pin);
+  if (state.pin && wasHidden) renderMethodsEditor();
   const me = localStorage.getItem("name") || "";
 
   const balances = {};
   for (const o of state.orders) {
-    if (o.status === "erledigt") balances[o.requester] = (balances[o.requester] || 0) + amountOf(o);
+    if (o.status === "erledigt" || o.status === "gemeldet") balances[o.requester] = (balances[o.requester] || 0) + amountOf(o);
   }
   const entries = Object.entries(balances);
   $("balances").innerHTML = entries.length
@@ -141,12 +177,19 @@ function renderOrder(o) {
   const priceInfo = o.price != null && o.price !== o.offer
     ? `<span class="price">${euro(o.price)}</span> <s>${euro(o.offer)}</s>`
     : `<span class="price">${euro(o.offer)}</span>`;
-  const payLink = state.paypalMe && o.status === "erledigt"
-    ? `<a class="pay" target="_blank" rel="noopener" href="https://paypal.me/${encodeURIComponent(state.paypalMe)}/${amountOf(o)}EUR">Jetzt mit PayPal bezahlen</a>`
-    : "";
+  const paid = o.paymentMethod ? ` · per ${esc(o.paymentMethod)}` : "";
+  const payBox = o.status === "erledigt" && state.methods.length ? `
+    <div class="pay" data-id="${o.id}">
+      <select data-field="method">
+        <option value="">Wie willst du ${euro(amountOf(o))} bezahlen?</option>
+        ${state.methods.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("")}
+      </select>
+      <div class="pay-info hidden"></div>
+      <div><button data-action="pay" disabled>Zahlung melden</button></div>
+    </div>` : "";
   const admin = state.pin ? `
     <div class="admin" data-id="${o.id}">
-      <div><label>Status</label><select data-field="status">${STATUSES.map((s) => `<option ${s === o.status ? "selected" : ""}>${s}</option>`).join("")}</select></div>
+      <div><label>Status</label><select data-field="status">${STATUSES.map((s) => `<option value="${s}" ${s === o.status ? "selected" : ""}>${STATUS_LABELS[s]}</option>`).join("")}</select></div>
       <div><label>Preis (€)</label><input data-field="price" type="number" min="0" step="0.5" value="${o.price ?? ""}" placeholder="${o.offer}"></div>
       <div class="full"><input data-field="note" placeholder="Notiz an ${esc(o.requester)}" value="${esc(o.note)}"></div>
       <div class="full"><button data-action="save">Speichern</button><button class="danger" data-action="delete">Löschen</button></div>
@@ -156,13 +199,13 @@ function renderOrder(o) {
       <div class="order-head">
         <div>
           <h3>${esc(o.title)}</h3>
-          <div class="meta">${esc(o.requester)} · ${date}${due} · ${priceInfo}</div>
+          <div class="meta">${esc(o.requester)} · ${date}${due} · ${priceInfo}${paid}</div>
         </div>
-        <span class="badge s-${o.status}">${o.status}</span>
+        <span class="badge s-${o.status}">${STATUS_LABELS[o.status]}</span>
       </div>
       ${o.description ? `<p class="desc">${esc(o.description)}</p>` : ""}
       ${o.note ? `<div class="note">Julian: ${esc(o.note)}</div>` : ""}
-      ${payLink}
+      ${payBox}
       ${admin}
     </div>`;
 }
@@ -200,10 +243,12 @@ $("filters").addEventListener("click", (e) => {
 $("orders").addEventListener("click", async (e) => {
   const btn = e.target.closest("button[data-action]");
   if (!btn) return;
-  const box = btn.closest(".admin");
+  const box = btn.closest(".admin, .pay");
   const id = box.dataset.id;
   try {
-    if (btn.dataset.action === "delete") {
+    if (btn.dataset.action === "pay") {
+      await api("POST", `/api/orders/${id}/pay`, { methodId: box.querySelector('[data-field="method"]').value });
+    } else if (btn.dataset.action === "delete") {
       if (!confirm("Auftrag wirklich löschen?")) return;
       await api("DELETE", `/api/orders/${id}`);
     } else {
@@ -215,6 +260,37 @@ $("orders").addEventListener("click", async (e) => {
       });
     }
     await load();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+$("orders").addEventListener("change", (e) => {
+  if (e.target.dataset.field !== "method") return;
+  const box = e.target.closest(".pay");
+  const method = state.methods.find((m) => m.id === e.target.value);
+  const info = box.querySelector(".pay-info");
+  info.textContent = method?.instructions || "";
+  info.classList.toggle("hidden", !method?.instructions);
+  box.querySelector('[data-action="pay"]').disabled = !method;
+});
+
+$("addMethod").addEventListener("click", () => {
+  state.methods = [...readMethodsEditor(), { id: "", name: "", instructions: "" }];
+  renderMethodsEditor();
+});
+
+$("methodsEditor").addEventListener("click", (e) => {
+  if (e.target.dataset.action !== "remove") return;
+  e.target.closest(".method").remove();
+});
+
+$("saveMethods").addEventListener("click", async () => {
+  try {
+    state.methods = await api("PUT", "/api/payment-methods", readMethodsEditor());
+    renderMethodsEditor();
+    render();
+    alert("Zahlungsarten gespeichert");
   } catch (err) {
     alert(err.message);
   }
@@ -239,9 +315,11 @@ $("loginBtn").addEventListener("click", async () => {
   render();
 });
 
-api("GET", "/api/config").then((cfg) => { state.paypalMe = cfg.paypalMe; render(); });
 load();
-setInterval(load, 30000);
+setInterval(() => {
+  if (document.activeElement?.closest(".pay, .admin, #methodsEditor")) return;
+  load();
+}, 30000);
 </script>
 </body>
 </html>

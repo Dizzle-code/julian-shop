@@ -5,30 +5,35 @@ const crypto = require("node:crypto");
 
 const PORT = Number(process.env.PORT || 5731);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
-const DATA_FILE = path.join(DATA_DIR, "orders.json");
+const ORDERS_FILE = path.join(DATA_DIR, "orders.json");
+const METHODS_FILE = path.join(DATA_DIR, "payment-methods.json");
 const ADMIN_PIN = process.env.ADMIN_PIN || "1234";
-const PAYPAL_ME = process.env.PAYPAL_ME || "";
 const PUBLIC_DIR = path.join(__dirname, "public");
 
-const STATUSES = ["neu", "angenommen", "erledigt", "bezahlt", "abgelehnt"];
+const STATUSES = ["neu", "angenommen", "erledigt", "gemeldet", "bezahlt", "abgelehnt"];
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
-function loadOrders() {
+function loadJson(file, fallback) {
   try {
-    return JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+    return JSON.parse(fs.readFileSync(file, "utf8"));
   } catch {
-    return [];
+    return fallback;
   }
 }
 
-let orders = loadOrders();
-
-function saveOrders() {
-  const tmp = DATA_FILE + ".tmp";
-  fs.writeFileSync(tmp, JSON.stringify(orders, null, 2));
-  fs.renameSync(tmp, DATA_FILE);
+function saveJson(file, value) {
+  const tmp = file + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(value, null, 2));
+  fs.renameSync(tmp, file);
 }
+
+let orders = loadJson(ORDERS_FILE, []);
+let paymentMethods = loadJson(METHODS_FILE, [
+  { id: crypto.randomUUID(), name: "Bar", instructions: "Gib mir das Geld einfach persönlich." },
+]);
+
+const saveOrders = () => saveJson(ORDERS_FILE, orders);
 
 function isAdmin(req) {
   const given = crypto.createHash("sha256").update(String(req.headers["x-admin-pin"] || "")).digest();
@@ -70,9 +75,41 @@ function cleanAmount(value) {
 
 async function handleApi(req, res, url) {
   const idMatch = url.pathname.match(/^\/api\/orders\/([\w-]+)$/);
+  const payMatch = url.pathname.match(/^\/api\/orders\/([\w-]+)\/pay$/);
 
-  if (req.method === "GET" && url.pathname === "/api/config") {
-    return send(res, 200, { paypalMe: PAYPAL_ME });
+  if (req.method === "GET" && url.pathname === "/api/payment-methods") {
+    return send(res, 200, paymentMethods);
+  }
+
+  if (req.method === "PUT" && url.pathname === "/api/payment-methods") {
+    if (!isAdmin(req)) return send(res, 401, { error: "Nur Julian darf das" });
+    const body = await readBody(req);
+    if (!Array.isArray(body)) return send(res, 400, { error: "Liste erwartet" });
+    const cleaned = body
+      .map((m) => ({
+        id: typeof m.id === "string" && /^[\w-]{1,64}$/.test(m.id) ? m.id : crypto.randomUUID(),
+        name: cleanText(m.name, 50),
+        instructions: cleanText(m.instructions, 500),
+      }))
+      .filter((m) => m.name)
+      .slice(0, 20);
+    paymentMethods = cleaned;
+    saveJson(METHODS_FILE, paymentMethods);
+    return send(res, 200, paymentMethods);
+  }
+
+  if (req.method === "POST" && payMatch) {
+    const order = orders.find((o) => o.id === payMatch[1]);
+    if (!order) return send(res, 404, { error: "Auftrag nicht gefunden" });
+    if (order.status !== "erledigt") return send(res, 400, { error: "Nur erledigte Aufträge können bezahlt werden" });
+    const body = await readBody(req);
+    const method = paymentMethods.find((m) => m.id === body.methodId);
+    if (!method) return send(res, 400, { error: "Zahlungsart unbekannt" });
+    order.status = "gemeldet";
+    order.paymentMethod = method.name;
+    order.updatedAt = new Date().toISOString();
+    saveOrders();
+    return send(res, 200, order);
   }
 
   if (req.method === "POST" && url.pathname === "/api/login") {
@@ -99,6 +136,7 @@ async function handleApi(req, res, url) {
       dueDate: cleanText(body.dueDate, 10) || null,
       status: "neu",
       note: "",
+      paymentMethod: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

@@ -2,6 +2,11 @@
 
 Auftragsboard für die Familie: Aufträge erstellen, Julian legt Preis/Status fest, offene Beträge werden pro Person angezeigt.
 
+## Bezahlen
+
+Nach dem Julian-Login erscheint "Zahlungsarten verwalten": dort eigene Zahlungsarten anlegen (Name + Anleitung, z.B. "Bar", "Überweisung" mit IBAN, "Spardose").
+Ist ein Auftrag `erledigt`, wählt das Familienmitglied eine Zahlungsart und meldet die Zahlung. Der Auftrag steht dann auf `Zahlung gemeldet`, bis Julian ihn auf `bezahlt` setzt.
+
 ## Dokploy
 
 1. Create Service -> Compose -> Inhalt von `dokploy-compose.yml` einfügen.
@@ -13,11 +18,11 @@ Updates: Code pushen, in Dokploy neu deployen.
 
 ## Starten (ohne Dokploy)
 
-1. In `docker-compose.yml` `ADMIN_PIN` ändern (optional `PAYPAL_ME` = dein paypal.me-Name, dann erscheint bei erledigten Aufträgen ein Bezahl-Link).
+1. In `docker-compose.yml` `ADMIN_PIN` ändern.
 2. `docker compose up -d --build`
 3. Aufrufen: `http://<server-ip>:5731`
 
-Daten liegen im Docker-Volume `shop-data` (`/data/orders.json`).
+Daten liegen im Docker-Volume `shop-data` (`/data/orders.json`, `/data/payment-methods.json`).
 
 ## Erreichbar unter julian.local
 
